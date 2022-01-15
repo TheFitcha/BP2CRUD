@@ -13,27 +13,33 @@ public class main extends baza{
     private static JPanel comboboxPanel;
     private static JPanel userInteractionPanel;
     private static JPanel userButtonsPanel;
+    private static JPanel manualSQLPanel;
     private static Font mainFont;
     private static JTextField[] textFields;
+    private static JTextField manualSQLText;
+    private static JButton manualSQLButton;
     private static JButton applyButton;
     private static JButton deleteButton;
     private static JButton clearButton;
     public static void main(String[] args){
         mainFrame = new JFrame();
         mainPanel = new JPanel(new FlowLayout(FlowLayout.LEADING, 10, 5));
-        tablePanel = new JPanel();
+        tablePanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 5));
         comboboxPanel = new JPanel();
         userInputPanel = new JPanel(new GridLayout(0, 2, 10, 20));
         userInteractionPanel = new JPanel(new GridBagLayout());
         userButtonsPanel = new JPanel(new GridLayout(0, 3, 10, 0));
+        manualSQLPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
         konekcija = new baza();
         mainFont = new Font("Consolas", Font.BOLD, 14);
         applyButton = new JButton("Unesi");
         clearButton = new JButton("Ocisti");
         deleteButton = new JButton("Obrisi");
+        manualSQLText = new JTextField("SELECT 'alive' FROM dual", 90);
+        manualSQLButton = new JButton("Izvrsi");
 
         mainFrame.setTitle("BP2GUI");
-        mainFrame.setPreferredSize(new Dimension(850, 500));
+        mainFrame.setPreferredSize(new Dimension(850, 530));
         mainFrame.setResizable(false);
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         mainFrame.setLocationRelativeTo(null);
@@ -41,6 +47,8 @@ public class main extends baza{
         mainFrame.setContentPane(mainPanel);
         mainPanel.add(tablePanel);
         mainPanel.add(userInteractionPanel);
+        mainPanel.add(manualSQLPanel);
+
         userInteractionPanel.setPreferredSize(new Dimension(300, 400));
 
         GridBagConstraints constraints = new GridBagConstraints();
@@ -63,8 +71,17 @@ public class main extends baza{
         userButtonsPanel.add(deleteButton);
         userButtonsPanel.add(clearButton);
 
+        manualSQLText.setFont(mainFont);
+        manualSQLText.setPreferredSize(new Dimension(manualSQLText.getWidth(), 25 ));
+        manualSQLPanel.add(manualSQLText);
+        manualSQLPanel.add(manualSQLButton);
+
+        manualSQLButton.addActionListener(e -> {
+            sendQueryManual();
+        });
+
         applyButton.addActionListener(e -> {
-            if(checkIfExists(textFields[0].getText()))
+            if(checkUpdate())
                 updateData();
             else
                 insertData();
@@ -94,7 +111,19 @@ public class main extends baza{
 
         comboBox = new JComboBox();
         populateComboBox();
-        comboBox.addActionListener(e -> readData(String.valueOf(comboBox.getSelectedItem())));
+        comboBox.addActionListener(e -> {
+            if(comboBox.getSelectedItem() != ""){
+                readData(String.valueOf(comboBox.getSelectedItem()));
+                applyButton.setEnabled(true);
+                deleteButton.setEnabled(true);
+                clearButton.setEnabled(true);
+            }
+            else{
+                applyButton.setEnabled(false);
+                deleteButton.setEnabled(false);
+                clearButton.setEnabled(false);
+            }
+        });
 
         comboboxPanel.add(comboBox);
 
@@ -103,24 +132,39 @@ public class main extends baza{
         mainFrame.setVisible(true);
     }
 
-    public static boolean checkIfExists(String id){
+    public static boolean checkUpdate(){    //check all primary keys if they have the same value
+        if(dataTable.getRowCount() == 0)
+            return false;
+        if(!checkIfExists(textFields[0].getText(), 0))
+            return false;
+        for(int i = 0; i<dataTable.getColumnCount(); i++)
+            if(konekcija.checkForeignKey(dataTable.getColumnName(i)) != -1)
+                if(!checkIfExists(textFields[i].getText(), i)){
+                    return false;
+                }
+        return true;
+    }
+
+    public static boolean checkIfExists(String id, int column){     //check values from textboxes
         for(int i = 0; i<dataTable.getRowCount(); i++){
-            if(id.equalsIgnoreCase(dataTable.getValueAt(i, 0).toString())){
+            if(dataTable.getValueAt(i, column).toString().contains(id)){
                 return true;
             }
         }
         return false;
     }
 
-    public static void populateComboBox(){
+    public static void populateComboBox(){      //self-explainatory
         String[] naziviTablica = {"privilegija", "privilegija_korisnik", "korisnik", "instalirao", 
             "aplikacija", "dokument", "kreirao_dokument", "vrsta_dokumenta", "direktorij", "particija"};
+        comboBox.addItem("");
         for (String naziv : naziviTablica){
             comboBox.addItem(naziv);
         }
+        comboBox.setSelectedIndex(1);
     }
 
-    public static void readData(String name){
+    public static void readData(String name){       //get data from database
         DefaultTableModel dataModel = konekcija.getData(name);
         if(dataModel == null) {
             JOptionPane.showMessageDialog(mainFrame, "Pogreška prilikom spajanja na bazu!", "Pogreška",
@@ -131,7 +175,7 @@ public class main extends baza{
         createFields();
     }
 
-    public static void createFields(){
+    public static void createFields(){      //dynamically create fields for user interaction
         userInputPanel.removeAll();
         int columnCount = dataTable.getColumnCount();
         textFields = new JTextField[columnCount];
@@ -145,7 +189,7 @@ public class main extends baza{
         userInputPanel.repaint();
     }
 
-    public static void fillFieldsWhenSelected(int selectedRow){
+    public static void fillFieldsWhenSelected(int selectedRow){     //fill textboxes with data from the table
         for(int i = 0; i<textFields.length; i++){
             if(konekcija.checkForeignKey(dataTable.getColumnName(i)) != -1){
                 textFields[i].setText(konekcija.getForeignKeyValue(comboBox.getSelectedItem().toString(),
@@ -172,27 +216,46 @@ public class main extends baza{
             else
                 query += "'" + textFields[i].getText() + "', ";
         }
-        try{
-            konekcija.executeQuery(query);
-        }
-        catch (Exception e){
-            String error = String.valueOf(e);
-            JOptionPane.showMessageDialog(mainFrame, "Pogreška prilikom izvođenja operacije!\n" + error,
-                    "Pogreška", JOptionPane.ERROR_MESSAGE);
-        }
-        readData(String.valueOf(comboBox.getSelectedItem()));
+        sendQuery(query);
     }
 
     public static void updateData(){
         String query = "UPDATE " + comboBox.getSelectedItem() + " SET ";
         for(int i = 0; i<textFields.length; i++){
             if(i+1 == textFields.length)
-                query += dataTable.getColumnName(i) + " = '" + textFields[i].getText() + "' WHERE " +
-                        dataTable.getColumnName(0) + " = " + textFields[0].getText();
+                query += dataTable.getColumnName(i) + " = '" + textFields[i].getText() + "' WHERE ";
             else
                 query += dataTable.getColumnName(i) + " = '" + textFields[i].getText() + "', ";
         }
+        for(int j = 0; j<dataTable.getColumnCount(); j++){
+            if(konekcija.checkPrimaryKey(dataTable.getColumnName(j)) != -1){
+                query += dataTable.getColumnName(j) + " = " + textFields[j].getText() + " AND ";
+            }
+        }
+        query = query.substring(0, query.length()-5);
+        System.out.println(query);
+        //sendQuery(query);
+    }
+
+    public static void deleteData(){
+        String query = "DELETE FROM " + comboBox.getSelectedItem() + " WHERE ";
+        if(konekcija.checkKeys()){
+            query += dataTable.getColumnName(0) + " = " + textFields[0].getText();
+        }
+        else {
+            for(int j = 0; j<dataTable.getColumnCount(); j++){
+                if(konekcija.checkPrimaryKey(dataTable.getColumnName(j)) != -1){
+                    query += dataTable.getColumnName(j) + " = " + textFields[j].getText() + " AND ";
+                }
+            }
+            query = query.substring(0, query.length()-5);
+        }
+        sendQuery(query);
+    }
+
+    public static void sendQuery(String query){
         try{
+            System.out.println(query);
             konekcija.executeQuery(query);
         }
         catch (Exception e){
@@ -203,17 +266,18 @@ public class main extends baza{
         readData(String.valueOf(comboBox.getSelectedItem()));
     }
 
-    public static void deleteData(){
-        String query = "DELETE FROM " + comboBox.getSelectedItem() + " WHERE " + dataTable.getColumnName(0) + "="
-                + dataTable.getValueAt(dataTable.getSelectedRow(), 0).toString();
+    public static void sendQueryManual(){
+        String query = manualSQLText.getText();
         try{
-            konekcija.executeQuery(query);
+            DefaultTableModel model = konekcija.getDataManual(query);
+            dataTable.setModel(model);
+            createFields();
+            comboBox.setSelectedIndex(0);
         }
         catch (Exception e){
             String error = String.valueOf(e);
             JOptionPane.showMessageDialog(mainFrame, "Pogreška prilikom izvođenja operacije!\n" + error,
                     "Pogreška", JOptionPane.ERROR_MESSAGE);
         }
-        readData(String.valueOf(comboBox.getSelectedItem()));
     }
 }

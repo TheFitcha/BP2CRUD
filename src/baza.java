@@ -1,5 +1,6 @@
 import javax.swing.table.DefaultTableModel;
 import java.sql.*;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Vector;
 
@@ -18,7 +19,7 @@ public class baza {
                 throw new Exception("Neuspjela konekcija na bazu!");
             }
             stmt = conn.createStatement();
-            stmt.executeQuery("alter session set container = bp2_pdb");
+            //stmt.executeQuery("alter session set container = bp2_pdb");
         }
         catch (Exception e){
             System.out.println(e);
@@ -26,10 +27,45 @@ public class baza {
     }
 
     public static DefaultTableModel getData(String tableName){
+        return getDataFromQuery(tableName, "select * from " + tableName);
+    }
+
+    public static DefaultTableModel getDataManual(String query) throws Exception{
+        try{
+            String tableName = parseTableName(query);
+            System.out.println("TableName: " + tableName);
+            if(tableName == ""){
+                throw new Exception("Neuspjelo parsiranje imena tablice! Prekid...");
+            }
+            DefaultTableModel model = getDataFromQuery(tableName, query);
+            if(model == null){
+                throw new Exception("Upit nije vratio podatke!");
+            }
+            return model;
+        }
+        catch(Exception e){
+            throw e;
+        }
+    }
+
+    public static String parseTableName(String queryString){
+        boolean foundTableName = false;
+        for(String keyword : Arrays.asList(queryString.split(" "))){
+            if(foundTableName){
+                return keyword;
+            }
+            if(keyword.equalsIgnoreCase("from")){
+                foundTableName = true;
+            }
+        }
+        return "";
+    }
+
+    public static DefaultTableModel getDataFromQuery(String tableName, String query){
         DefaultTableModel model = null;
         try{
             createConnection();
-            ResultSet rs = stmt.executeQuery("select * from " + tableName);
+            ResultSet rs = stmt.executeQuery(query);
             ResultSetMetaData metaData = rs.getMetaData();
 
             Vector<String> naziviAtributa = new Vector<String>();
@@ -38,15 +74,14 @@ public class baza {
             }
 
             Vector<Vector<Object>> podaci = new Vector<>();
-            foreignKeysColumns = getAllForeignKeys(tableName);
+            foreignKeysColumns = getAllKeys(tableName);
             int foreignIndex;
             while(rs.next()){
                 Vector<Object> pomocni = new Vector<>();
                 for (int j = 1; j <= metaData.getColumnCount(); j++){
                     foreignIndex = checkForeignKey(metaData.getColumnName(j));
                     if(foreignIndex != -1){
-                        pomocni.add(rs.getString(j) + " (" + getColumnValues(foreignIndex, rs.getString(j))
-                                + ")");
+                        pomocni.add(rs.getString(j) + " (" + getColumnValues(foreignIndex, rs.getString(j)) + ")");
                     }
                     else {
                         pomocni.add(rs.getObject(j));
@@ -78,7 +113,6 @@ public class baza {
         try{
             createConnection();
             int result = stmt.executeUpdate(query);
-            System.out.println(query);
             System.out.println("Modified " + result + " rows.");
         }
         catch (Exception e){
@@ -90,7 +124,7 @@ public class baza {
         }
     }
 
-    public static Vector<Vector<String>> getAllForeignKeys(String tableName){
+    public static Vector<Vector<String>> getAllKeys(String tableName){
         Vector<Vector<String>> foreignKeys = new Vector<>();
         try{
             createConnection();
@@ -110,17 +144,30 @@ public class baza {
         finally {
             closeConnection();
         }
-        System.out.println(foreignKeys);
+        System.out.println("Keys: " + foreignKeys);
         return foreignKeys;
+    }
+
+    public static boolean checkKeys(){
+        return foreignKeysColumns.isEmpty();
     }
 
     public static int checkForeignKey(String columnName){
         int counter = -1;
         for(Vector<String> keyPair : foreignKeysColumns){
             counter++;
-            if(keyPair.contains(columnName)){
+            if(keyPair.contains(columnName))
                 return counter;
-            }
+        }
+        return -1;
+    }
+
+    public static int checkPrimaryKey(String columnName){
+        int counter = -1;
+        for(Vector<String> key : foreignKeysColumns){
+            counter++;
+            if(key.get(1).contains(columnName))
+                return counter;
         }
         return -1;
     }
@@ -132,7 +179,6 @@ public class baza {
             createConnection();
             query = "select * from " + foreignKeysColumns.get(index).get(0) + " where " + foreignKeysColumns.get(index).get(1)
                     + " = " + columnValue;
-            System.out.println(query);
             ResultSet rs = stmt.executeQuery(query);
             while(rs.next()) {
                 columnNameResult = rs.getString(2);
